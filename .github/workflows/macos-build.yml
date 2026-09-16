@@ -49,20 +49,23 @@ jobs:
           dylibbundler -od -b -x "$APP/Contents/MacOS/rnote-bin" -d "$APP/Contents/Frameworks/" -p '@executable_path/../Frameworks'
           cat > "$GITHUB_WORKSPACE/launcher.c" <<'C'
           #include <limits.h>
-          #include <stdio.h>
           #include <stdlib.h>
           #include <string.h>
           #include <unistd.h>
           int main(int argc, char **argv) {
               char exe[PATH_MAX];
               if (!realpath(argv[0], exe)) return 127;
-              char *macos = strrchr(exe, '/');
-              if (!macos) return 127;
-              *macos = '\0';
+              char *slash = strrchr(exe, '/');
+              if (!slash) return 127;
+              *slash = '\0';
+              char *macos = exe;
+              char *contents = strrchr(macos, '/');
+              if (!contents) return 127;
+              *contents = '\0';
               char schema[PATH_MAX], data[PATH_MAX], target[PATH_MAX];
-              snprintf(schema, sizeof(schema), "%s/../Resources/glib-2.0/schemas", exe);
-              snprintf(data, sizeof(data), "%s/../Resources", exe);
-              snprintf(target, sizeof(target), "%s/rnote-bin", exe);
+              snprintf(schema, sizeof(schema), "%s/Resources/glib-2.0/schemas", macos);
+              snprintf(data, sizeof(data), "%s/Resources", macos);
+              snprintf(target, sizeof(target), "%s/MacOS/rnote-bin", macos);
               setenv("GSETTINGS_SCHEMA_DIR", schema, 1);
               setenv("XDG_DATA_DIRS", data, 1);
               execv(target, argv);
@@ -80,22 +83,26 @@ jobs:
           <key>CFBundleIdentifier</key><string>com.fanlaoshi.moxie</string>
           <key>CFBundlePackageType</key><string>APPL</string>
           <key>CFBundleExecutable</key><string>rnote</string>
-          <key>CFBundleVersion</key><string>0.2.3</string>
-          <key>CFBundleShortVersionString</key><string>0.2.3</string>
+          <key>CFBundleVersion</key><string>0.2.4</string>
+          <key>CFBundleShortVersionString</key><string>0.2.4</string>
           <key>LSMinimumSystemVersion</key><string>13.0</string>
           </dict></plist>
           PLIST
-          glib-compile-schemas "$APP/Contents/Resources/glib-2.0/schemas"
+          SCHEMA="$APP/Contents/Resources/glib-2.0/schemas"
+          mkdir -p "$SCHEMA"
+          find "$APP/Contents/Resources" -name '*.gschema.xml' -print
+          glib-compile-schemas "$SCHEMA"
+          test -s "$SCHEMA/gschemas.compiled"
+          GSETTINGS_SCHEMA_DIR="$SCHEMA" gsettings list-schemas | grep -q rnote
           xattr -cr "$APP"
           codesign --force --deep --sign - "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
-          echo '--- Smoke test: launching bundled executable ---'
+          echo '--- Smoke test ---'
           "$APP/Contents/MacOS/rnote" >/tmp/moxie-smoke.log 2>&1 &
           PID=$!
           sleep 8
           if ! kill -0 "$PID" 2>/dev/null; then
             cat /tmp/moxie-smoke.log || true
-            echo '墨写 smoke test failed: process exited during startup'
             exit 1
           fi
           kill "$PID" 2>/dev/null || true
@@ -107,6 +114,6 @@ jobs:
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: moxie-macos-v0.2.3
+          name: moxie-macos-v0.2.4
           path: dist/墨写-第一版-手写测试.dmg
           if-no-files-found: error
