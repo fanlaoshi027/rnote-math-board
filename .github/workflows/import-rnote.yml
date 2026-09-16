@@ -24,19 +24,21 @@ jobs:
       - name: Clone Rnote upstream
         run: git clone --depth 1 https://github.com/flxzt/rnote.git /tmp/rnote
 
-      - name: Import Rnote source
+      - name: Import Rnote source into project root
         run: |
-          rm -rf .rnote-upstream
-          mkdir -p .rnote-upstream
-          cp -a /tmp/rnote/. .rnote-upstream/
-          rm -rf .rnote-upstream/.git
-          printf '%s\n' 'Rnote upstream source snapshot used as the initial technical base.' > .rnote-upstream/UPSTREAM.md
+          rsync -a --delete --exclude '.git/' --exclude '.github/' /tmp/rnote/ ./
+          mkdir -p .github
+          git checkout -- .github/workflows/import-rnote.yml || true
+
+      - name: Record upstream source
+        run: |
+          printf '%s\n' '# Rnote upstream base' '' 'This project starts from the Rnote upstream source. See the upstream repository and license information in the project root.' > RNOTE-UPSTREAM.md
 
       - name: Commit imported source
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .rnote-upstream
+          git add -A
           git diff --cached --quiet && exit 0
-          git commit -m 'chore: import Rnote upstream source'
+          git commit -m 'chore: import Rnote upstream into project root'
           git push origin math-ui-v1
