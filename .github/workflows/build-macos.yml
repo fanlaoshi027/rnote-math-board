@@ -13,26 +13,127 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install rust pkg-config gtk4 libadwaita
+          brew install rust pkg-config meson ninja gtk4 libadwaita dylibbundler
 
-      - name: Build release
-        run: cargo build --release --workspace
-
-      - name: Locate executable
+      - name: Configure
+        env:
+          RUSTFLAGS: "-C link-arg=-Wl,-headerpad_max_install_names"
         run: |
-          find target/release -maxdepth 2 -type f -perm +111 -print || true
+          meson setup _mesonbuild --prefix="$PWD/stage/usr" -Dprofile=default
 
-      - name: Package
+      - name: Build
+        env:
+          RUSTFLAGS: "-C link-arg=-Wl,-headerpad_max_install_names"
+        run: meson compile -C _mesonbuild
+
+      - name: Install to staging
+        run: meson install -C _mesonbuild --no-rebuild
+
+      - name: Create app bundle
         run: |
-          mkdir -p dist/Rnote-Math-Board.app/Contents/MacOS
-          BIN=$(find target/release -maxdepth 1 -type f -perm +111 -name 'rnote*' | head -n 1)
-          test -n "$BIN"
-          cp "$BIN" dist/Rnote-Math-Board.app/Contents/MacOS/Rnote-Math-Board
-          printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' '<plist version="1.0"><dict><key>CFBundleName</key><string>Rnote Math Board</string><key>CFBundleDisplayName</key><string>Rnote Math Board</string><key>CFBundleExecutable</key><string>Rnote-Math-Board</string><key>CFBundleIdentifier</key><string>com.fanlaoshi.rnote-math-board</string><key>CFBundleVersion</key><string>0.1.0</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>' > dist/Rnote-Math-Board.app/Contents/Info.plist
-          hdiutil create -volname 'Rnote Math Board' -srcfolder dist/Rnote-Math-Board.app -ov -format UDZO dist/Rnote-Math-Board-macOS-arm64.dmg
+          set -euxo pipefail
+          APP="$PWD/dist/墨写.app"
+          rm -rf "$PWD/dist"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
+
+          cp "$PWD/stage/usr/bin/rnote" "$APP/Contents/MacOS/rnote-bin"
+          chmod +x "$APP/Contents/MacOS/rnote-bin"
+
+          if [ -d "$PWD/stage/usr/share" ]; then
+            cp -R "$PWD/stage/usr/share" "$APP/Contents/Resources/share"
+          fi
+
+          cat > "$PWD/dist/launcher.c" <<'EOF'
+          #include <unistd.h>
+          #include <libgen.h>
+          #include <limits.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          int main(void) {
+              char exe[PATH_MAX];
+              uint32_t size = (uint32_t)sizeof(exe);
+              if (_NSGetExecutablePath(exe, &size) != 0) return 1;
+              char real[PATH_MAX];
+              if (realpath(exe, real) == NULL) return 1;
+              char *macos = dirname(real);
+              char app[PATH_MAX];
+              snprintf(app, sizeof(app), "%s/..", macos);
+              char resources[PATH_MAX];
+              snprintf(resources, sizeof(resources), "%s/Resources", app);
+              char schemas[PATH_MAX];
+              snprintf(schemas, sizeof(schemas), "%s/share/glib-2.0/schemas", resources);
+              char data[PATH_MAX];
+              snprintf(data, sizeof(data), "%s/share", resources);
+              setenv("GSETTINGS_SCHEMA_DIR", schemas, 1);
+              setenv("XDG_DATA_DIRS", data, 1);
+              char bin[PATH_MAX];
+              snprintf(bin, sizeof(bin), "%s/rnote-bin", macos);
+              execl(bin, "rnote", (char *)NULL);
+              perror("exec rnote-bin");
+              return 1;
+          }
+          EOF
+          clang "$PWD/dist/launcher.c" -o "$APP/Contents/MacOS/墨写"
+          rm -f "$PWD/dist/launcher.c"
+
+          cat > "$APP/Contents/Info.plist" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleName</key><string>墨写</string>
+          <key>CFBundleDisplayName</key><string>墨写</string>
+          <key>CFBundleExecutable</key><string>墨写</string>
+          <key>CFBundleIdentifier</key><string>com.fanlaoshi.moxie</string>
+          <key>CFBundleVersion</key><string>0.1.1</string>
+          <key>CFBundleShortVersionString</key><string>0.1.1</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>LSMinimumSystemVersion</key><string>13.0</string>
+          </dict></plist>
+          EOF
+
+      - name: Bundle dynamic libraries
+        run: |
+          set -euxo pipefail
+          APP="$PWD/dist/墨写.app"
+          dylibbundler -od -b -x "$APP/Contents/MacOS/rnote-bin" \
+            -d "$APP/Contents/Frameworks" \
+            -p "@executable_path/../Frameworks/" \
+            -s "$(brew --prefix)/lib" \
+            -s "$(brew --prefix)/opt/gtk4/lib" \
+            -s "$(brew --prefix)/opt/libadwaita/lib"
+
+      - name: Verify bundle dependencies
+        run: |
+          set -euxo pipefail
+          otool -L "$PWD/dist/墨写.app/Contents/MacOS/rnote-bin"
+          test -d "$PWD/dist/墨写.app/Contents/Frameworks"
+          test -n "$(find "$PWD/dist/墨写.app/Contents/Frameworks" -type f | head -n 1)"
+
+      - name: Ad-hoc sign app bundle
+        run: |
+          set -euxo pipefail
+          codesign --force --deep --sign - --timestamp=none "$PWD/dist/墨写.app"
+          codesign --verify --deep --strict --verbose=2 "$PWD/dist/墨写.app"
+
+      - name: Smoke test executable
+        run: |
+          set -euxo pipefail
+          "$PWD/dist/墨写.app/Contents/MacOS/墨写" --version || true
+
+      - name: Create DMG
+        run: |
+          set -euxo pipefail
+          mkdir -p "$PWD/dmg-root"
+          cp -R "$PWD/dist/墨写.app" "$PWD/dmg-root/"
+          ln -s /Applications "$PWD/dmg-root/Applications"
+          hdiutil create -volname "墨写-第一版-手写测试" \
+            -srcfolder "$PWD/dmg-root" \
+            -ov -format UDZO \
+            "$PWD/墨写-第一版-手写测试.dmg"
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: Rnote-Math-Board-macOS-arm64
-          path: dist/Rnote-Math-Board-macOS-arm64.dmg
+          name: moxie-macos-v0.1.1
+          path: 墨写-第一版-手写测试.dmg
