@@ -17,7 +17,9 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          brew update
+          set -euxo pipefail
+          # Do not run `brew update`: GitHub macOS runners already ship with
+          # a usable Homebrew index, and updating it adds unnecessary minutes.
           brew install ninja meson glib appstream gtk4 desktop-file-utils libadwaita cmake pkg-config gettext dylibbundler
 
       - name: Fetch Rnote source
@@ -58,7 +60,6 @@ jobs:
 
           cat > "$GITHUB_WORKSPACE/launcher.c" <<'C'
           #include <limits.h>
-          #include <stdio.h>
           #include <stdlib.h>
           #include <string.h>
           #include <unistd.h>
@@ -98,8 +99,8 @@ jobs:
           <key>CFBundleIdentifier</key><string>com.fanlaoshi.moxie</string>
           <key>CFBundlePackageType</key><string>APPL</string>
           <key>CFBundleExecutable</key><string>rnote</string>
-          <key>CFBundleVersion</key><string>0.1.3</string>
-          <key>CFBundleShortVersionString</key><string>0.1.3</string>
+          <key>CFBundleVersion</key><string>0.1.4</string>
+          <key>CFBundleShortVersionString</key><string>0.1.4</string>
           <key>LSMinimumSystemVersion</key><string>13.0</string>
           </dict></plist>
           PLIST
@@ -108,8 +109,7 @@ jobs:
           codesign --force --deep --sign - "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
 
-          # macOS runners do not provide GNU timeout. Start the exact app executable,
-          # wait briefly, and verify that it remains alive.
+          echo '--- Smoke test: launching bundled executable ---'
           "$APP/Contents/MacOS/rnote" >/tmp/moxie-smoke.log 2>&1 &
           PID=$!
           sleep 8
@@ -126,6 +126,6 @@ jobs:
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: moxie-macos-v0.1.3
+          name: moxie-macos-v0.1.4
           path: dist/墨写-第一版-手写测试.dmg
           if-no-files-found: error
