@@ -2,50 +2,41 @@ name: Import Rnote Upstream
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - math-ui-v1
+    paths:
+      - '.github/workflows/import-rnote.yml'
 
 permissions:
   contents: write
 
 jobs:
-  import:
+  import-rnote:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout project
+      - name: Checkout math board
         uses: actions/checkout@v4
         with:
+          ref: math-ui-v1
           fetch-depth: 0
 
+      - name: Clone Rnote upstream
+        run: git clone --depth 1 https://github.com/flxzt/rnote.git /tmp/rnote
+
       - name: Import Rnote source
-        env:
-          RNOTE_REF: bbc5354502ba2fc83eec2670b535348825e679a6
         run: |
-          set -euo pipefail
-          rm -rf /tmp/rnote
-          git clone https://github.com/flxzt/rnote.git /tmp/rnote
-          cd /tmp/rnote
-          git checkout "$RNOTE_REF"
-          cd -
-
-          rsync -a --delete \
-            --exclude '.git/' \
-            --exclude '.github/' \
-            --exclude 'README.md' \
-            /tmp/rnote/ ./
-
-          cat > RNOTE-UPSTREAM.md <<EOF
-# Rnote upstream baseline
-
-Imported from `flxzt/rnote`.
-
-Pinned upstream commit: `$RNOTE_REF`
-
-This project intentionally starts from the Rnote drawing engine and will first tune handwriting feel before adding features or redesigning the UI.
-EOF
+          rm -rf .rnote-upstream
+          mkdir -p .rnote-upstream
+          cp -a /tmp/rnote/. .rnote-upstream/
+          rm -rf .rnote-upstream/.git
+          printf '%s\n' 'Rnote upstream source snapshot used as the initial technical base.' > .rnote-upstream/UPSTREAM.md
 
       - name: Commit imported source
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --quiet || git commit -m "chore: import Rnote upstream baseline"
-          git push origin HEAD:math-ui-v1
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .rnote-upstream
+          git diff --cached --quiet && exit 0
+          git commit -m 'chore: import Rnote upstream source'
+          git push origin math-ui-v1
