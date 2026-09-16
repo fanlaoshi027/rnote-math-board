@@ -18,8 +18,6 @@ jobs:
       - name: Install build dependencies
         run: |
           set -euxo pipefail
-          # Do not run `brew update`: GitHub macOS runners already ship with
-          # a usable Homebrew index, and updating it adds unnecessary minutes.
           brew install ninja meson glib appstream gtk4 desktop-file-utils libadwaita cmake pkg-config gettext dylibbundler
 
       - name: Fetch Rnote source
@@ -27,6 +25,11 @@ jobs:
           git clone --depth 1 https://github.com/flxzt/rnote.git rnote-src
           cd rnote-src
           git submodule update --init --recursive
+
+      - name: Apply Moxie pen feel
+        run: |
+          chmod +x moxie/apply-pen-feel.sh
+          ./moxie/apply-pen-feel.sh "$GITHUB_WORKSPACE/rnote-src"
 
       - name: Configure Rnote with Meson
         working-directory: rnote-src
@@ -99,8 +102,8 @@ jobs:
           <key>CFBundleIdentifier</key><string>com.fanlaoshi.moxie</string>
           <key>CFBundlePackageType</key><string>APPL</string>
           <key>CFBundleExecutable</key><string>rnote</string>
-          <key>CFBundleVersion</key><string>0.1.4</string>
-          <key>CFBundleShortVersionString</key><string>0.1.4</string>
+          <key>CFBundleVersion</key><string>0.2.0</string>
+          <key>CFBundleShortVersionString</key><string>0.2.0</string>
           <key>LSMinimumSystemVersion</key><string>13.0</string>
           </dict></plist>
           PLIST
@@ -126,6 +129,6 @@ jobs:
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: moxie-macos-v0.1.4
+          name: moxie-macos-v0.2.0
           path: dist/墨写-第一版-手写测试.dmg
           if-no-files-found: error
