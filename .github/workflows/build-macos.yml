@@ -1,0 +1,38 @@
+name: Build macOS DMG
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew update
+          brew install rust pkg-config gtk4 libadwaita
+
+      - name: Build release
+        run: cargo build --release --workspace
+
+      - name: Locate executable
+        run: |
+          find target/release -maxdepth 2 -type f -perm +111 -print || true
+
+      - name: Package
+        run: |
+          mkdir -p dist/Rnote-Math-Board.app/Contents/MacOS
+          BIN=$(find target/release -maxdepth 1 -type f -perm +111 -name 'rnote*' | head -n 1)
+          test -n "$BIN"
+          cp "$BIN" dist/Rnote-Math-Board.app/Contents/MacOS/Rnote-Math-Board
+          printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' '<plist version="1.0"><dict><key>CFBundleName</key><string>Rnote Math Board</string><key>CFBundleDisplayName</key><string>Rnote Math Board</string><key>CFBundleExecutable</key><string>Rnote-Math-Board</string><key>CFBundleIdentifier</key><string>com.fanlaoshi.rnote-math-board</string><key>CFBundleVersion</key><string>0.1.0</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>' > dist/Rnote-Math-Board.app/Contents/Info.plist
+          hdiutil create -volname 'Rnote Math Board' -srcfolder dist/Rnote-Math-Board.app -ov -format UDZO dist/Rnote-Math-Board-macOS-arm64.dmg
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rnote-Math-Board-macOS-arm64
+          path: dist/Rnote-Math-Board-macOS-arm64.dmg
