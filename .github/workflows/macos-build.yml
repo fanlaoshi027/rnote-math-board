@@ -18,7 +18,7 @@ jobs:
       - name: Install build dependencies
         run: |
           brew update
-          brew install ninja meson glib appstream gtk4 desktop-file-utils libadwaita cmake pkg-config gettext
+          brew install ninja meson glib appstream gtk4 desktop-file-utils libadwaita cmake pkg-config gettext dylibbundler
 
       - name: Fetch Rnote source
         run: |
@@ -29,12 +29,11 @@ jobs:
       - name: Configure Rnote with Meson
         working-directory: rnote-src
         run: |
-          meson setup --prefix="$GITHUB_WORKSPACE/stage/usr/local" -Dprofile=default -Dcli=false _mesonbuild
+          meson setup --prefix=/usr/local -Dprofile=default -Dcli=false _mesonbuild
 
       - name: Build Rnote
         working-directory: rnote-src
-        run: |
-          meson compile -C _mesonbuild
+        run: meson compile -C _mesonbuild
 
       - name: Stage installation
         working-directory: rnote-src
@@ -43,18 +42,32 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/stage"
           meson install -C _mesonbuild --destdir "$GITHUB_WORKSPACE/stage"
 
-      - name: Inspect build output
+      - name: Package portable macOS app
         run: |
-          find "$GITHUB_WORKSPACE/stage" -maxdepth 6 -type f | sort | head -200
-
-      - name: Package macOS test app
-        run: |
+          set -euxo pipefail
           APP="$GITHUB_WORKSPACE/dist/墨写.app"
           rm -rf "$GITHUB_WORKSPACE/dist"
-          mkdir -p "$APP/Contents/MacOS"
-          mkdir -p "$APP/Contents/Resources"
-          cp "$GITHUB_WORKSPACE/stage/usr/local/bin/rnote" "$APP/Contents/MacOS/rnote"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
+
+          # Install output from Meson
+          cp "$GITHUB_WORKSPACE/stage/usr/local/bin/rnote" "$APP/Contents/MacOS/rnote-bin"
           cp -R "$GITHUB_WORKSPACE/stage/usr/local/share/." "$APP/Contents/Resources/"
+
+          # Bundle Homebrew/GTK dylibs so the app does not depend on the build machine.
+          dylibbundler -od -b -x "$APP/Contents/MacOS/rnote-bin" \
+            -d "$APP/Contents/Frameworks/" \
+            -p '@executable_path/../Frameworks'
+
+          # Launcher sets the runtime data/schema paths expected by GTK/GLib.
+          cat > "$APP/Contents/MacOS/rnote" <<'SH'
+          #!/bin/sh
+          APP_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+          export GSETTINGS_SCHEMA_DIR="$APP_DIR/Resources/glib-2.0/schemas"
+          export XDG_DATA_DIRS="$APP_DIR/Resources:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+          exec "$APP_DIR/MacOS/rnote-bin" "$@"
+          SH
+          chmod +x "$APP/Contents/MacOS/rnote"
+
           cat > "$APP/Contents/Info.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -64,17 +77,21 @@ jobs:
           <key>CFBundleIdentifier</key><string>com.fanlaoshi.moxie</string>
           <key>CFBundlePackageType</key><string>APPL</string>
           <key>CFBundleExecutable</key><string>rnote</string>
-          <key>CFBundleVersion</key><string>0.1.0</string>
-          <key>CFBundleShortVersionString</key><string>0.1.0</string>
+          <key>CFBundleVersion</key><string>0.1.1</string>
+          <key>CFBundleShortVersionString</key><string>0.1.1</string>
           </dict></plist>
           PLIST
-          chmod +x "$APP/Contents/MacOS/rnote"
-          mkdir -p "$GITHUB_WORKSPACE/dist"
+
+          # Remove build-machine quarantine metadata and ad-hoc sign the bundle.
+          xattr -cr "$APP"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
           hdiutil create -volname 墨写 -srcfolder "$APP" -ov -format UDZO "$GITHUB_WORKSPACE/dist/墨写-第一版-手写测试.dmg"
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: moxie-macos-v0.1.0
+          name: moxie-macos-v0.1.1
           path: dist/墨写-第一版-手写测试.dmg
           if-no-files-found: error
