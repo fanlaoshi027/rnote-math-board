@@ -49,23 +49,47 @@ jobs:
           rm -rf "$GITHUB_WORKSPACE/dist"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 
-          # Install output from Meson
           cp "$GITHUB_WORKSPACE/stage/usr/local/bin/rnote" "$APP/Contents/MacOS/rnote-bin"
           cp -R "$GITHUB_WORKSPACE/stage/usr/local/share/." "$APP/Contents/Resources/"
 
-          # Bundle Homebrew/GTK dylibs so the app does not depend on the build machine.
           dylibbundler -od -b -x "$APP/Contents/MacOS/rnote-bin" \
             -d "$APP/Contents/Frameworks/" \
             -p '@executable_path/../Frameworks'
 
-          # Launcher sets the runtime data/schema paths expected by GTK/GLib.
-          cat > "$APP/Contents/MacOS/rnote" <<'SH'
-          #!/bin/sh
-          APP_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-          export GSETTINGS_SCHEMA_DIR="$APP_DIR/Resources/glib-2.0/schemas"
-          export XDG_DATA_DIRS="$APP_DIR/Resources:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
-          exec "$APP_DIR/MacOS/rnote-bin" "$@"
-          SH
+          # A native Mach-O launcher is used instead of a shell script because
+          # LaunchServices expects the bundle executable to be a native executable.
+          cat > "$GITHUB_WORKSPACE/launcher.c" <<'C'
+          #include <limits.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          #include <unistd.h>
+
+          int main(int argc, char **argv) {
+              char exe[PATH_MAX];
+              if (!realpath(argv[0], exe)) return 127;
+
+              char *macos = strrchr(exe, '/');
+              if (!macos) return 127;
+              *macos = '\0';
+              char *contents = strrchr(exe, '/');
+              if (!contents) return 127;
+              *contents = '\0';
+
+              char schema[PATH_MAX];
+              char data[PATH_MAX];
+              char target[PATH_MAX];
+              snprintf(schema, sizeof(schema), "%s/Resources/glib-2.0/schemas", exe);
+              snprintf(data, sizeof(data), "%s/Resources", exe);
+              snprintf(target, sizeof(target), "%s/MacOS/rnote-bin", exe);
+
+              setenv("GSETTINGS_SCHEMA_DIR", schema, 1);
+              setenv("XDG_DATA_DIRS", data, 1);
+              execv(target, argv);
+              return 127;
+          }
+          C
+          clang -O2 -Wall "$GITHUB_WORKSPACE/launcher.c" -o "$APP/Contents/MacOS/rnote"
           chmod +x "$APP/Contents/MacOS/rnote"
 
           cat > "$APP/Contents/Info.plist" <<'PLIST'
@@ -77,21 +101,33 @@ jobs:
           <key>CFBundleIdentifier</key><string>com.fanlaoshi.moxie</string>
           <key>CFBundlePackageType</key><string>APPL</string>
           <key>CFBundleExecutable</key><string>rnote</string>
-          <key>CFBundleVersion</key><string>0.1.1</string>
-          <key>CFBundleShortVersionString</key><string>0.1.1</string>
+          <key>CFBundleVersion</key><string>0.1.2</string>
+          <key>CFBundleShortVersionString</key><string>0.1.2</string>
+          <key>LSMinimumSystemVersion</key><string>13.0</string>
           </dict></plist>
           PLIST
 
-          # Remove build-machine quarantine metadata and ad-hoc sign the bundle.
           xattr -cr "$APP"
           codesign --force --deep --sign - "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
+
+          # Smoke test the exact executable that will go into the DMG.
+          timeout 15 "$APP/Contents/MacOS/rnote" >/tmp/moxie-smoke.log 2>&1 &
+          PID=$!
+          sleep 5
+          if ! kill -0 "$PID" 2>/dev/null; then
+            cat /tmp/moxie-smoke.log || true
+            echo '墨写 smoke test failed: process exited during startup'
+            exit 1
+          fi
+          kill "$PID" 2>/dev/null || true
+          wait "$PID" 2>/dev/null || true
 
           hdiutil create -volname 墨写 -srcfolder "$APP" -ov -format UDZO "$GITHUB_WORKSPACE/dist/墨写-第一版-手写测试.dmg"
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: moxie-macos-v0.1.1
+          name: moxie-macos-v0.1.2
           path: dist/墨写-第一版-手写测试.dmg
           if-no-files-found: error
