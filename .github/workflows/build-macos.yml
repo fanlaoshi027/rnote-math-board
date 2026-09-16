@@ -45,6 +45,20 @@ jobs:
             cp -R "$PWD/stage/usr/share" "$APP/Contents/Resources/share"
           fi
 
+          # GTK4 and Libadwaita keep important runtime data outside the Rnote
+          # install tree. Bundle their share trees so the app does not depend
+          # on Homebrew after installation.
+          mkdir -p "$APP/Contents/Resources/share"
+          cp -R "$(brew --prefix gtk4)/share/." "$APP/Contents/Resources/share/"
+          cp -R "$(brew --prefix libadwaita)/share/." "$APP/Contents/Resources/share/"
+
+          # GSettings schemas must be compiled in the bundle. In particular
+          # GTK4's EmojiChooser schema is constructed during startup.
+          SCHEMA_DIR="$APP/Contents/Resources/share/glib-2.0/schemas"
+          mkdir -p "$SCHEMA_DIR"
+          glib-compile-schemas "$SCHEMA_DIR"
+          test -f "$SCHEMA_DIR/gschemas.compiled"
+
           cat > "$PWD/dist/launcher.c" <<'EOF'
           #include <unistd.h>
           #include <libgen.h>
@@ -60,16 +74,18 @@ jobs:
               char real[PATH_MAX];
               if (realpath(exe, real) == NULL) return 1;
               char *macos = dirname(real);
-              char app[PATH_MAX];
-              snprintf(app, sizeof(app), "%s/..", macos);
+              char contents[PATH_MAX];
+              snprintf(contents, sizeof(contents), "%s/..", macos);
               char resources[PATH_MAX];
-              snprintf(resources, sizeof(resources), "%s/Resources", app);
+              snprintf(resources, sizeof(resources), "%s/Resources", contents);
               char schemas[PATH_MAX];
               snprintf(schemas, sizeof(schemas), "%s/share/glib-2.0/schemas", resources);
               char data[PATH_MAX];
               snprintf(data, sizeof(data), "%s/share", resources);
               setenv("GSETTINGS_SCHEMA_DIR", schemas, 1);
               setenv("XDG_DATA_DIRS", data, 1);
+              setenv("GTK_DATA_PREFIX", resources, 1);
+              setenv("GTK_EXE_PREFIX", resources, 1);
               char bin[PATH_MAX];
               snprintf(bin, sizeof(bin), "%s/rnote-bin", macos);
               execl(bin, "rnote", (char *)NULL);
@@ -88,8 +104,8 @@ jobs:
           <key>CFBundleDisplayName</key><string>墨写</string>
           <key>CFBundleExecutable</key><string>墨写</string>
           <key>CFBundleIdentifier</key><string>com.fanlaoshi.moxie</string>
-          <key>CFBundleVersion</key><string>0.1.2</string>
-          <key>CFBundleShortVersionString</key><string>0.1.2</string>
+          <key>CFBundleVersion</key><string>0.1.3</string>
+          <key>CFBundleShortVersionString</key><string>0.1.3</string>
           <key>CFBundlePackageType</key><string>APPL</string>
           <key>LSMinimumSystemVersion</key><string>13.0</string>
           </dict></plist>
@@ -106,12 +122,15 @@ jobs:
             -s "$(brew --prefix)/opt/gtk4/lib" \
             -s "$(brew --prefix)/opt/libadwaita/lib"
 
-      - name: Verify bundle dependencies
+      - name: Verify bundle dependencies and runtime data
         run: |
           set -euxo pipefail
-          otool -L "$PWD/dist/墨写.app/Contents/MacOS/rnote-bin"
-          test -d "$PWD/dist/墨写.app/Contents/Frameworks"
-          test -n "$(find "$PWD/dist/墨写.app/Contents/Frameworks" -type f | head -n 1)"
+          APP="$PWD/dist/墨写.app"
+          otool -L "$APP/Contents/MacOS/rnote-bin"
+          test -d "$APP/Contents/Frameworks"
+          test -n "$(find "$APP/Contents/Frameworks" -type f | head -n 1)"
+          test -f "$APP/Contents/Resources/share/glib-2.0/schemas/gschemas.compiled"
+          test -f "$APP/Contents/Resources/share/gtk-4.0/gtk.gresource"
 
       - name: Ad-hoc sign app bundle
         run: |
@@ -119,10 +138,10 @@ jobs:
           codesign --force --deep --sign - --timestamp=none "$PWD/dist/墨写.app"
           codesign --verify --deep --strict --verbose=2 "$PWD/dist/墨写.app"
 
-      - name: Smoke test executable
+      - name: Smoke test bundled launcher
         run: |
           set -euxo pipefail
-          "$PWD/dist/墨写.app/Contents/MacOS/墨写" --version || true
+          timeout 15 "$PWD/dist/墨写.app/Contents/MacOS/墨写" --version || true
 
       - name: Create DMG
         run: |
@@ -138,5 +157,5 @@ jobs:
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: moxie-macos-v0.1.2
+          name: moxie-macos-v0.1.3
           path: 墨写-第一版-手写测试.dmg
