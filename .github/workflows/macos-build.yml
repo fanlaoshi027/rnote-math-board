@@ -91,10 +91,22 @@ jobs:
           PLIST
           SCHEMA="$APP/Contents/Resources/glib-2.0/schemas"
           mkdir -p "$SCHEMA"
+          # Rnote schemas come from the staged install. GTK/GLib schemas come from Homebrew.
           find "$APP/Contents/Resources" -name '*.gschema.xml' -print
+          BREW_SHARE="$(brew --prefix)/share"
+          if [ -d "$BREW_SHARE/glib-2.0/schemas" ]; then
+            find "$BREW_SHARE/glib-2.0/schemas" -maxdepth 1 -type f -name '*.xml' -exec cp -f {} "$SCHEMA/" \;
+          fi
+          # Also include schemas from common GTK dependency prefixes if present.
+          for prefix in /opt/homebrew /usr/local; do
+            if [ -d "$prefix/share/glib-2.0/schemas" ]; then
+              find "$prefix/share/glib-2.0/schemas" -maxdepth 1 -type f -name '*.xml' -exec cp -f {} "$SCHEMA/" \;
+            fi
+          done
           glib-compile-schemas "$SCHEMA"
           test -s "$SCHEMA/gschemas.compiled"
           GSETTINGS_SCHEMA_DIR="$SCHEMA" gsettings list-schemas | grep -q rnote
+          GSETTINGS_SCHEMA_DIR="$SCHEMA" gsettings list-schemas | grep -q 'org.gtk.gtk4.Settings.EmojiChooser'
           xattr -cr "$APP"
           codesign --force --deep --sign - "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
