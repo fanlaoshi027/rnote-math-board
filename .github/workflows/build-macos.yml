@@ -1,6 +1,8 @@
 name: Build macOS DMG
 
 on:
+  push:
+    branches: [math-ui-v1]
   workflow_dispatch:
 
 jobs:
@@ -49,7 +51,8 @@ jobs:
           #include <limits.h>
           #include <stdio.h>
           #include <stdlib.h>
-          #include <string.h>
+          #include <stdint.h>
+          #include <mach-o/dyld.h>
           int main(void) {
               char exe[PATH_MAX];
               uint32_t size = (uint32_t)sizeof(exe);
@@ -85,8 +88,8 @@ jobs:
           <key>CFBundleDisplayName</key><string>墨写</string>
           <key>CFBundleExecutable</key><string>墨写</string>
           <key>CFBundleIdentifier</key><string>com.fanlaoshi.moxie</string>
-          <key>CFBundleVersion</key><string>0.1.1</string>
-          <key>CFBundleShortVersionString</key><string>0.1.1</string>
+          <key>CFBundleVersion</key><string>0.1.2</string>
+          <key>CFBundleShortVersionString</key><string>0.1.2</string>
           <key>CFBundlePackageType</key><string>APPL</string>
           <key>LSMinimumSystemVersion</key><string>13.0</string>
           </dict></plist>
@@ -135,5 +138,5 @@ jobs:
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: moxie-macos-v0.1.1
+          name: moxie-macos-v0.1.2
           path: 墨写-第一版-手写测试.dmg
