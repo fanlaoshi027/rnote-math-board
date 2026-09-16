@@ -1,0 +1,56 @@
+name: macOS Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: |
+          brew update
+          brew install gtk4 libadwaita pkg-config gettext
+
+      - name: Clone Rnote
+        run: |
+          git clone --depth 1 https://github.com/flxzt/rnote.git rnote-src
+
+      - name: Build Rnote
+        working-directory: rnote-src
+        run: cargo build --release
+
+      - name: Package app
+        run: |
+          mkdir -p dist/墨写.app/Contents/MacOS
+          mkdir -p dist/墨写.app/Contents/Resources
+          cp rnote-src/target/release/rnote dist/墨写.app/Contents/MacOS/rnote
+          cat > dist/墨写.app/Contents/Info.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleName</key><string>墨写</string>
+          <key>CFBundleDisplayName</key><string>墨写</string>
+          <key>CFBundleIdentifier</key><string>com.fanlaoshi.moxie</string>
+          <key>CFBundleExecutable</key><string>rnote</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleVersion</key><string>0.1.0</string>
+          <key>CFBundleShortVersionString</key><string>0.1.0</string>
+          </dict></plist>
+          PLIST
+          chmod +x dist/墨写.app/Contents/MacOS/rnote
+          hdiutil create -volname 墨写 -srcfolder dist/墨写.app -ov -format UDZO dist/墨写-第一版-手写测试.dmg
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: moxie-macos-v0.1.0
+          path: dist/墨写-第一版-手写测试.dmg
