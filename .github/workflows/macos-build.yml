@@ -49,6 +49,7 @@ jobs:
           dylibbundler -od -b -x "$APP/Contents/MacOS/rnote-bin" -d "$APP/Contents/Frameworks/" -p '@executable_path/../Frameworks'
           cat > "$GITHUB_WORKSPACE/launcher.c" <<'C'
           #include <limits.h>
+          #include <stdio.h>
           #include <stdlib.h>
           #include <string.h>
           #include <unistd.h>
