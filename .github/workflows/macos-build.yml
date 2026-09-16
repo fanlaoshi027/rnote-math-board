@@ -56,8 +56,6 @@ jobs:
             -d "$APP/Contents/Frameworks/" \
             -p '@executable_path/../Frameworks'
 
-          # A native Mach-O launcher is used instead of a shell script because
-          # LaunchServices expects the bundle executable to be a native executable.
           cat > "$GITHUB_WORKSPACE/launcher.c" <<'C'
           #include <limits.h>
           #include <stdio.h>
@@ -68,7 +66,6 @@ jobs:
           int main(int argc, char **argv) {
               char exe[PATH_MAX];
               if (!realpath(argv[0], exe)) return 127;
-
               char *macos = strrchr(exe, '/');
               if (!macos) return 127;
               *macos = '\0';
@@ -101,8 +98,8 @@ jobs:
           <key>CFBundleIdentifier</key><string>com.fanlaoshi.moxie</string>
           <key>CFBundlePackageType</key><string>APPL</string>
           <key>CFBundleExecutable</key><string>rnote</string>
-          <key>CFBundleVersion</key><string>0.1.2</string>
-          <key>CFBundleShortVersionString</key><string>0.1.2</string>
+          <key>CFBundleVersion</key><string>0.1.3</string>
+          <key>CFBundleShortVersionString</key><string>0.1.3</string>
           <key>LSMinimumSystemVersion</key><string>13.0</string>
           </dict></plist>
           PLIST
@@ -111,10 +108,11 @@ jobs:
           codesign --force --deep --sign - "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
 
-          # Smoke test the exact executable that will go into the DMG.
-          timeout 15 "$APP/Contents/MacOS/rnote" >/tmp/moxie-smoke.log 2>&1 &
+          # macOS runners do not provide GNU timeout. Start the exact app executable,
+          # wait briefly, and verify that it remains alive.
+          "$APP/Contents/MacOS/rnote" >/tmp/moxie-smoke.log 2>&1 &
           PID=$!
-          sleep 5
+          sleep 8
           if ! kill -0 "$PID" 2>/dev/null; then
             cat /tmp/moxie-smoke.log || true
             echo '墨写 smoke test failed: process exited during startup'
@@ -128,6 +126,6 @@ jobs:
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: moxie-macos-v0.1.2
+          name: moxie-macos-v0.1.3
           path: dist/墨写-第一版-手写测试.dmg
           if-no-files-found: error
