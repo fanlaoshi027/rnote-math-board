@@ -15,21 +15,21 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
           brew update
           brew install ninja meson glib appstream gtk4 desktop-file-utils libadwaita cmake pkg-config gettext
 
-      - name: Clone Rnote
+      - name: Fetch Rnote source
         run: |
           git clone --depth 1 https://github.com/flxzt/rnote.git rnote-src
           cd rnote-src
           git submodule update --init --recursive
 
-      - name: Configure with Meson
+      - name: Configure Rnote with Meson
         working-directory: rnote-src
         run: |
-          meson setup --prefix=/usr/local _mesonbuild
+          meson setup --prefix="$GITHUB_WORKSPACE/stage/usr/local" -Dprofile=default -Dcli=false _mesonbuild
 
       - name: Build Rnote
         working-directory: rnote-src
@@ -39,17 +39,22 @@ jobs:
       - name: Stage installation
         working-directory: rnote-src
         run: |
-          rm -rf ../stage
-          DESTDIR="$GITHUB_WORKSPACE/stage" meson install -C _mesonbuild
+          rm -rf "$GITHUB_WORKSPACE/stage"
+          mkdir -p "$GITHUB_WORKSPACE/stage"
+          meson install -C _mesonbuild --destdir "$GITHUB_WORKSPACE/stage"
 
-      - name: Package macOS app bundle
+      - name: Inspect build output
+        run: |
+          find "$GITHUB_WORKSPACE/stage" -maxdepth 6 -type f | sort | head -200
+
+      - name: Package macOS test app
         run: |
           APP="$GITHUB_WORKSPACE/dist/墨写.app"
+          rm -rf "$GITHUB_WORKSPACE/dist"
           mkdir -p "$APP/Contents/MacOS"
           mkdir -p "$APP/Contents/Resources"
           cp "$GITHUB_WORKSPACE/stage/usr/local/bin/rnote" "$APP/Contents/MacOS/rnote"
-          cp -R "$GITHUB_WORKSPACE/stage/usr/local/share" "$APP/Contents/Resources/share"
-          mkdir -p "$APP/Contents/Frameworks"
+          cp -R "$GITHUB_WORKSPACE/stage/usr/local/share/." "$APP/Contents/Resources/"
           cat > "$APP/Contents/Info.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -72,3 +77,4 @@ jobs:
         with:
           name: moxie-macos-v0.1.0
           path: dist/墨写-第一版-手写测试.dmg
+          if-no-files-found: error
