@@ -18,36 +18,54 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install gtk4 libadwaita pkg-config gettext
+          brew install ninja meson glib appstream gtk4 desktop-file-utils libadwaita cmake pkg-config gettext
 
       - name: Clone Rnote
         run: |
           git clone --depth 1 https://github.com/flxzt/rnote.git rnote-src
+          cd rnote-src
+          git submodule update --init --recursive
+
+      - name: Configure with Meson
+        working-directory: rnote-src
+        run: |
+          meson setup --prefix=/usr/local _mesonbuild
 
       - name: Build Rnote
         working-directory: rnote-src
-        run: cargo build --release
-
-      - name: Package app
         run: |
-          mkdir -p dist/墨写.app/Contents/MacOS
-          mkdir -p dist/墨写.app/Contents/Resources
-          cp rnote-src/target/release/rnote dist/墨写.app/Contents/MacOS/rnote
-          cat > dist/墨写.app/Contents/Info.plist <<'PLIST'
+          meson compile -C _mesonbuild
+
+      - name: Stage installation
+        working-directory: rnote-src
+        run: |
+          rm -rf ../stage
+          DESTDIR="$GITHUB_WORKSPACE/stage" meson install -C _mesonbuild
+
+      - name: Package macOS app bundle
+        run: |
+          APP="$GITHUB_WORKSPACE/dist/墨写.app"
+          mkdir -p "$APP/Contents/MacOS"
+          mkdir -p "$APP/Contents/Resources"
+          cp "$GITHUB_WORKSPACE/stage/usr/local/bin/rnote" "$APP/Contents/MacOS/rnote"
+          cp -R "$GITHUB_WORKSPACE/stage/usr/local/share" "$APP/Contents/Resources/share"
+          mkdir -p "$APP/Contents/Frameworks"
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0"><dict>
           <key>CFBundleName</key><string>墨写</string>
           <key>CFBundleDisplayName</key><string>墨写</string>
           <key>CFBundleIdentifier</key><string>com.fanlaoshi.moxie</string>
-          <key>CFBundleExecutable</key><string>rnote</string>
           <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleExecutable</key><string>rnote</string>
           <key>CFBundleVersion</key><string>0.1.0</string>
           <key>CFBundleShortVersionString</key><string>0.1.0</string>
           </dict></plist>
           PLIST
-          chmod +x dist/墨写.app/Contents/MacOS/rnote
-          hdiutil create -volname 墨写 -srcfolder dist/墨写.app -ov -format UDZO dist/墨写-第一版-手写测试.dmg
+          chmod +x "$APP/Contents/MacOS/rnote"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          hdiutil create -volname 墨写 -srcfolder "$APP" -ov -format UDZO "$GITHUB_WORKSPACE/dist/墨写-第一版-手写测试.dmg"
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
