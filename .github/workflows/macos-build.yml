@@ -70,19 +70,20 @@ jobs:
           int main(int argc, char **argv) {
               char exe[PATH_MAX];
               if (!realpath(argv[0], exe)) return 127;
+
+              // argv[0] resolves to Contents/MacOS/rnote.
+              // Strip only the executable name and the MacOS directory,
+              // leaving the Contents directory as the bundle root.
               char *macos = strrchr(exe, '/');
               if (!macos) return 127;
               *macos = '\0';
-              char *contents = strrchr(exe, '/');
-              if (!contents) return 127;
-              *contents = '\0';
 
               char schema[PATH_MAX];
               char data[PATH_MAX];
               char target[PATH_MAX];
-              snprintf(schema, sizeof(schema), "%s/Resources/glib-2.0/schemas", exe);
-              snprintf(data, sizeof(data), "%s/Resources", exe);
-              snprintf(target, sizeof(target), "%s/MacOS/rnote-bin", exe);
+              snprintf(schema, sizeof(schema), "%s/../Resources/glib-2.0/schemas", exe);
+              snprintf(data, sizeof(data), "%s/../Resources", exe);
+              snprintf(target, sizeof(target), "%s/rnote-bin", exe);
 
               setenv("GSETTINGS_SCHEMA_DIR", schema, 1);
               setenv("XDG_DATA_DIRS", data, 1);
@@ -102,8 +103,8 @@ jobs:
           <key>CFBundleIdentifier</key><string>com.fanlaoshi.moxie</string>
           <key>CFBundlePackageType</key><string>APPL</string>
           <key>CFBundleExecutable</key><string>rnote</string>
-          <key>CFBundleVersion</key><string>0.2.0</string>
-          <key>CFBundleShortVersionString</key><string>0.2.0</string>
+          <key>CFBundleVersion</key><string>0.2.1</string>
+          <key>CFBundleShortVersionString</key><string>0.2.1</string>
           <key>LSMinimumSystemVersion</key><string>13.0</string>
           </dict></plist>
           PLIST
@@ -129,6 +130,6 @@ jobs:
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: moxie-macos-v0.2.0
+          name: moxie-macos-v0.2.1
           path: dist/墨写-第一版-手写测试.dmg
           if-no-files-found: error
